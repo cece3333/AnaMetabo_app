@@ -27,13 +27,12 @@ server <- function(input, output, session) {
                     selected = "cytosol")
       ),
       footer = tagList(
-        modalButton("Annuler"),
-        actionButton("confirm_add_node", "Valider")
+        actionButton("confirm_add_node", "Confirm"),
+        modalButton("Cancel")
       )
     ))
   })
   
-  # Gestion du clic sur le bouton "Valider" dans la modale
   observeEvent(input$confirm_add_node, {
     req(input$node_id, input$node_label, input$node_shape)
     
@@ -100,7 +99,7 @@ server <- function(input, output, session) {
     showNotification("Node successfully added!", type = "message")
     removeModal()
   })
-
+  
   observeEvent(input$delete_node, {
     req(input$network_selected)  # Vérifie qu'un nœud est sélectionné dans le graphe
     
@@ -124,67 +123,122 @@ server <- function(input, output, session) {
     showNotification("Node successfully deleted!", type = "message")
   })
   
-  # Gestion du clic sur le bouton "Add Edge"
-  observeEvent(input$add_edge, {
+  # Modale pour ajouter une arête
+  observeEvent(input$add_edge_button, {
     showModal(modalDialog(
-      title = "Ajouter une arête",
-      selectInput("edge_from_modal", "Depuis le nœud (Label) :", choices = setNames(graph_data$nodes$id, graph_data$nodes$label)),
-      selectInput("edge_to_modal", "Vers le nœud (Label) :", choices = setNames(graph_data$nodes$id, graph_data$nodes$label)),
-      textInput("edge_label_modal", "Label de l'arête :", value = ""),
+      title = "Add Edge",
+      selectInput("edge_from", "From Node:", 
+                  choices = setNames(graph_data$nodes$id, graph_data$nodes$label)),
+      selectInput("edge_to", "To Node:", 
+                  choices = setNames(graph_data$nodes$id, graph_data$nodes$label)),
+      textInput("edge_label", "Edge Label (Optional):"),
+      selectInput("arrow_type", "Arrow Type:",
+                  choices = list("Basic (Black)" = "basic",
+                                 "Inhibition (Red)" = "inhibition",
+                                 "Activation (Dashed Green)" = "activation")),
       footer = tagList(
-        modalButton("Annuler"),
-        actionButton("confirm_add_edge", "Valider")
+        actionButton("confirm_add_edge", "Confirm"),
+        modalButton("Cancel")
       )
     ))
   })
   
   observeEvent(input$confirm_add_edge, {
-    req(input$edge_from_modal, input$edge_to_modal)
+    req(input$edge_from, input$edge_to, input$arrow_type)
     
+    # Check if nodes exist
+    if (!(input$edge_from %in% graph_data$nodes$id) || !(input$edge_to %in% graph_data$nodes$id)) {
+      showNotification("Specified nodes do not exist.", type = "error")
+      return()
+    }
+    
+    # Determine edge properties based on arrow type
+    edge_color <- "black"
+    edge_dashes <- FALSE
+    
+    if (input$arrow_type == "inhibition") {
+      edge_color <- "red"
+    } else if (input$arrow_type == "activation") {
+      edge_color <- "green"
+      edge_dashes <- TRUE
+    }
+    
+    # Create the new edge
     new_edge <- data.frame(
-      from = input$edge_from_modal,
-      to = input$edge_to_modal,
-      label = input$edge_label_modal,
+      from = input$edge_from,
+      to = input$edge_to,
+      arrows = "to", # Arrow points to the target node
+      color = edge_color, # Set color based on selection
+      dashes = edge_dashes, # Dashed line for activation
+      width = 1, # Default edge width
+      label = input$edge_label, # Optional label
       stringsAsFactors = FALSE
     )
     
-    if (!any(graph_data$edges$from == input$edge_from_modal & graph_data$edges$to == input$edge_to_modal)) {
-      graph_data$edges <- rbind(graph_data$edges, new_edge)
-      showNotification("Edge successfully added!", type = "message")
-      removeModal()
-    } else {
-      showNotification("Edge already exists!", type = "error")
+    # Synchronize columns with existing edges
+    all_columns <- union(names(graph_data$edges), names(new_edge))
+    for (col in setdiff(all_columns, names(graph_data$edges))) {
+      graph_data$edges[[col]] <- NA
     }
+    for (col in setdiff(all_columns, names(new_edge))) {
+      new_edge[[col]] <- NA
+    }
+    
+    # Add the new edge to the data
+    graph_data$edges <- rbind(graph_data$edges, new_edge)
+    
+    # Success notification
+    showNotification("Edge successfully added!", type = "message")
+    removeModal()
   })
+    
   
-  # Gestion du clic sur le bouton "Delete Edge"
   observeEvent(input$delete_edge, {
     showModal(modalDialog(
-      title = "Supprimer une arête",
-      selectInput("delete_edge_from_modal", "Depuis le nœud (Label) :", 
-                  choices = setNames(graph_data$nodes$id, graph_data$nodes$label)),
-      selectInput("delete_edge_to_modal", "Vers le nœud (Label) :", 
-                  choices = setNames(graph_data$nodes$id, graph_data$nodes$label)),
+      title = "Delete Edge",
+      # From Node with search feature
+      selectizeInput("delete_edge_from", "From Node:", 
+                     choices = setNames(graph_data$nodes$id, graph_data$nodes$label),
+                     selected = NULL, 
+                     options = list(placeholder = "Select or search a node")),
+      # To Node with search feature
+      selectizeInput("delete_edge_to", "To Node:", 
+                     choices = setNames(graph_data$nodes$id, graph_data$nodes$label),
+                     selected = NULL, 
+                     options = list(placeholder = "Select or search a node")),
+      # Footer with Confirm and Cancel buttons
       footer = tagList(
-        modalButton("Annuler"),
-        actionButton("confirm_delete_edge", "Valider")
+        modalButton("Cancel"), # Cancel button
+        actionButton("confirm_delete_edge", "Delete") # Confirmation button
       )
     ))
   })
   
   observeEvent(input$confirm_delete_edge, {
-    req(input$delete_edge_from_modal, input$delete_edge_to_modal)
+    req(input$delete_edge_from, input$delete_edge_to) # Ensure required inputs are provided
     
-    edge_exists <- graph_data$edges$from == input$delete_edge_from_modal & 
-      graph_data$edges$to == input$delete_edge_to_modal
+    # Check if any matching edges exist
+    edges_to_delete <- graph_data$edges[
+      graph_data$edges$from == input$delete_edge_from &
+        graph_data$edges$to == input$delete_edge_to, 
+    ]
     
-    if (any(edge_exists)) {
-      graph_data$edges <- graph_data$edges[!edge_exists, ]
-      showNotification("Edge successfully deleted!", type = "message")
-      removeModal()
-    } else {
-      showNotification("Edge does not exist!", type = "error")
+    if (nrow(edges_to_delete) == 0) {
+      showNotification("No matching edge found to delete.", type = "error")
+      return()
     }
+    
+    # Remove the matching edge(s)
+    graph_data$edges <- graph_data$edges[!(
+      graph_data$edges$from == input$delete_edge_from &
+        graph_data$edges$to == input$delete_edge_to
+    ), ]
+    
+    # Notify the user of successful deletion
+    showNotification("Edge successfully deleted!", type = "message")
+    
+    # Close the modal
+    removeModal()
   })
   
   # Charger un fichier SBML
@@ -263,10 +317,10 @@ server <- function(input, output, session) {
   output$network <- renderVisNetwork({
     req(graph_data$nodes, graph_data$edges)
     
-    # Recalculer les tailles avant de rendre le graphe
+    # Recalculate node sizes before rendering
     graph_data$nodes <- calculate_node_size(graph_data$nodes)
     
-    # Récupérer le choix du layout
+    # Retrieve the selected layout
     layout_choice <- input$layout_choice
     
     vis_net <- visNetwork(graph_data$nodes, graph_data$edges) %>%
@@ -274,15 +328,12 @@ server <- function(input, output, session) {
       visEdges(arrows = "to") %>%
       visInteraction(zoomView = TRUE, dragView = TRUE, multiselect = TRUE) %>%
       visNodes(
-        font = list(size = 20, vadjust = -30), # Positionner les étiquettes en dehors des nœuds
-        labelHighlightBold = FALSE, # Désactiver la mise en gras au survol
-        scaling = list(label = list(enabled = FALSE)) # Désactiver l'ajustement automatique
-      ) %>%
-      visEvents(select = "function(nodes) { 
-      Shiny.onInputChange('network_selected', nodes.nodes);
-    }")
+        font = list(size = 20, vadjust = -30), # Position labels outside nodes
+        labelHighlightBold = FALSE, # Disable bold highlight on hover
+        scaling = list(label = list(enabled = FALSE)) # Disable automatic scaling
+      )
     
-    # Ajouter le layout en fonction du choix
+    # Apply layout based on user choice
     if (layout_choice == "forceAtlas2Based") {
       vis_net <- vis_net %>%
         visPhysics(
@@ -313,11 +364,11 @@ server <- function(input, output, session) {
     } else if (layout_choice == "hierarchical") {
       vis_net <- vis_net %>%
         visHierarchicalLayout(
-          direction = "UD",  # "UD" signifie de haut en bas (Up-Down)
-          levelSeparation = 150,  # Augmenter la séparation entre les niveaux
-          nodeSpacing = 150,  # Augmenter l'espacement entre les nœuds
-          treeSpacing = 200,  # Espacement entre les sous-arbres
-          blockShifting = TRUE,  # Ajuster les blocs pour éviter les chevauchements
+          direction = "UD",  # Up-Down direction
+          levelSeparation = 150,
+          nodeSpacing = 150,
+          treeSpacing = 200,
+          blockShifting = TRUE,
           edgeMinimization = TRUE,
           parentCentralization = TRUE
         )
