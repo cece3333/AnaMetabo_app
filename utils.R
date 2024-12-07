@@ -28,6 +28,16 @@ save_sbml <- function(nodes, edges, file_path) {
   write_xml(sbml_doc, file_path)
 }
 
+calculate_node_size <- function(nodes) {
+  # Appliquer une taille en fonction de la forme des nœuds
+  nodes$size <- ifelse(
+    nodes$shape == "square", 
+    20,  # Taille pour les carrés (réactions)
+    50   # Taille par défaut pour les autres formes
+  )
+  return(nodes)
+}
+
 # Définir une palette Spectral avec des couleurs natives de R
 compartment_colors <- c(
   "cytosol" = "darkred", # Rouge vif

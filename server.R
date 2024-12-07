@@ -17,11 +17,15 @@ server <- function(input, output, session) {
       title = "Ajouter un nœud",
       textInput("node_id", "ID du nœud :", value = ""),
       textInput("node_label", "Nom du nœud :", value = ""),
-      selectInput("node_compartment", "Compartiment :", 
-                  choices = c(names(compartment_colors), "reaction"), selected = "cytosol"),
       selectInput("node_shape", "Forme du nœud :", 
                   choices = c("circle", "diamond", "square"), 
                   selected = "circle"),
+      conditionalPanel(
+        condition = "input.node_shape != 'square'",  # Montrer ce champ uniquement si la forme n'est pas "square"
+        selectInput("node_compartment", "Compartiment :", 
+                    choices = c(names(compartment_colors)), 
+                    selected = "cytosol")
+      ),
       footer = tagList(
         modalButton("Annuler"),
         actionButton("confirm_add_node", "Valider")
@@ -31,7 +35,7 @@ server <- function(input, output, session) {
   
   # Gestion du clic sur le bouton "Valider" dans la modale
   observeEvent(input$confirm_add_node, {
-    req(input$node_id, input$node_label, input$node_compartment, input$node_shape)
+    req(input$node_id, input$node_label, input$node_shape)
     
     # Vérifier si l'ID existe déjà
     if (input$node_id %in% graph_data$nodes$id) {
@@ -39,51 +43,52 @@ server <- function(input, output, session) {
       return()
     }
     
-    # Déterminer les propriétés du nœud en fonction du compartiment
-    if (input$node_compartment == "reaction") {
-      node_shape <- "square"        # Forme carrée pour les réactions
-      node_color_background <- "red"  # Couleur rouge pour les réactions
-      node_size <- 10               # Taille spécifique pour les réactions
+    # Définir les propriétés spécifiques pour les nœuds
+    if (input$node_shape == "square") {
+      # Forcer les propriétés pour les carrés (réactions)
+      node_compartment <- "reaction"
+      node_size <- 20
+      node_color_background <- "red"
+      border_color <- "black"
     } else {
-      node_shape <- input$node_shape
-      node_color_background <- "lightgrey"  # Couleur par défaut pour les autres nœuds
-      node_size <- if (input$node_shape == "square") 10 else 50  # Taille par défaut
+      # Propriétés par défaut pour les autres formes
+      node_compartment <- input$node_compartment
+      node_size <- 50
+      node_color_background <- "lightgrey"
+      border_color <- if (node_compartment %in% names(compartment_colors)) {
+        compartment_colors[[node_compartment]]
+      } else {
+        "black"  # Couleur par défaut si le compartiment n'est pas trouvé
+      }
     }
     
-    # Assigner la couleur de contour en fonction du compartiment
-    border_color <- if (input$node_compartment %in% names(compartment_colors)) {
-      compartment_colors[[input$node_compartment]]
-    } else {
-      "black"  # Couleur par défaut si le compartiment n'est pas trouvé
-    }
-    
-    # Créer le nouveau nœud
+    # Créer le nœud avec toutes les propriétés nécessaires
     new_node <- data.frame(
       id = input$node_id,
       label = input$node_label,
-      shape = node_shape,
-      color.border = border_color,  # Couleur de bordure définie
-      color.background = node_color_background,  # Couleur de fond
-      size = node_size,  # Taille en fonction de la forme et du compartiment
-      compartment = input$node_compartment,
+      shape = input$node_shape,
+      size = node_size,
+      font.size = 20,
+      color.background = node_color_background,
+      color.border = border_color,
+      compartment = node_compartment,
       stringsAsFactors = FALSE
     )
     
-    # Vérifier et aligner les colonnes
-    all_columns <- union(names(graph_data$nodes), names(new_node))  # Toutes les colonnes nécessaires
-    missing_cols_nodes <- setdiff(all_columns, names(graph_data$nodes))  # Colonnes manquantes dans graph_data$nodes
-    missing_cols_new_node <- setdiff(all_columns, names(new_node))  # Colonnes manquantes dans new_node
-    
-    # Ajouter les colonnes manquantes
-    for (col in missing_cols_nodes) {
-      graph_data$nodes[[col]] <- NA  # Ajouter les colonnes manquantes dans graph_data$nodes
+    # Synchronisation des colonnes entre les nœuds existants et le nouveau
+    all_columns <- union(names(graph_data$nodes), names(new_node))
+    for (col in setdiff(all_columns, names(graph_data$nodes))) {
+      graph_data$nodes[[col]] <- NA
     }
-    for (col in missing_cols_new_node) {
-      new_node[[col]] <- NA  # Ajouter les colonnes manquantes dans new_node
+    for (col in setdiff(all_columns, names(new_node))) {
+      new_node[[col]] <- NA
     }
     
-    # Ajouter le nœud au graphe
+    # Ajouter le nœud aux données existantes
     graph_data$nodes <- rbind(graph_data$nodes, new_node)
+    
+    # Appliquer la fonction de calcul des tailles
+    graph_data$nodes <- calculate_node_size(graph_data$nodes)
     
     # Mettre à jour les sélecteurs
     updateSelectInput(session, "edge_from", choices = setNames(graph_data$nodes$id, graph_data$nodes$label))
@@ -94,6 +99,29 @@ server <- function(input, output, session) {
     # Notification de succès
     showNotification("Node successfully added!", type = "message")
     removeModal()
+  })
+
+  observeEvent(input$delete_node, {
+    req(input$network_selected)  # Vérifie qu'un nœud est sélectionné dans le graphe
+    
+    # Récupérer l'ID du nœud sélectionné
+    selected_node <- input$network_selected
+    
+    # Supprimer le nœud sélectionné et ses arêtes associées
+    graph_data$nodes <- graph_data$nodes[graph_data$nodes$id != selected_node, ]
+    graph_data$edges <- graph_data$edges[!(graph_data$edges$from == selected_node | graph_data$edges$to == selected_node), ]
+    
+    # Recalculer les tailles après suppression
+    graph_data$nodes <- calculate_node_size(graph_data$nodes)
+    
+    # Mettre à jour les sélecteurs
+    updateSelectInput(session, "edge_from", choices = setNames(graph_data$nodes$id, graph_data$nodes$label))
+    updateSelectInput(session, "edge_to", choices = setNames(graph_data$nodes$id, graph_data$nodes$label))
+    updateSelectInput(session, "delete_edge_from", choices = setNames(graph_data$nodes$id, graph_data$nodes$label))
+    updateSelectInput(session, "delete_edge_to", choices = setNames(graph_data$nodes$id, graph_data$nodes$label))
+    
+    # Notification de succès
+    showNotification("Node successfully deleted!", type = "message")
   })
   
   # Gestion du clic sur le bouton "Add Edge"
@@ -162,51 +190,47 @@ server <- function(input, output, session) {
   # Charger un fichier SBML
   observeEvent(input$generate_graph, {
     req(input$sbml_file)
+    
     sbml_data <- load_sbml_data(input$sbml_file$datapath)
     graph_data$nodes <- sbml_data$nodes
     graph_data$edges <- sbml_data$edges
-    graph_generated(TRUE)
-    output$graph_stats <- renderText({
-      paste("Nombre de nœuds :", nrow(sbml_data$nodes), "| Nombre d'arêtes :", nrow(sbml_data$edges))
-    })
     
-    # Mettre à jour les choix pour les sélecteurs
+    # Recalculer les tailles après génération
+    graph_data$nodes <- calculate_node_size(graph_data$nodes)
+    
+    # Mettre à jour les sélecteurs
     updateSelectInput(session, "edge_from", choices = setNames(graph_data$nodes$id, graph_data$nodes$label))
     updateSelectInput(session, "edge_to", choices = setNames(graph_data$nodes$id, graph_data$nodes$label))
     updateSelectInput(session, "delete_edge_from", choices = setNames(graph_data$nodes$id, graph_data$nodes$label))
     updateSelectInput(session, "delete_edge_to", choices = setNames(graph_data$nodes$id, graph_data$nodes$label))
   })
   
-  
   # Légende dynamique dans la sidebar
   output$sidebar_legend <- renderUI({
-    if (graph_generated()) {
-      # Couleurs uniques des compartiments
-      compartment_legend <- unique(graph_data$nodes[, c("compartment", "color.border"), drop = FALSE])
+    if (nrow(graph_data$nodes) > 0) {
+      # Obtenir les compartiments uniques avec leurs couleurs
+      unique_compartments <- unique(graph_data$nodes[, c("compartment", "color.border"), drop = FALSE])
+      unique_compartments <- unique_compartments[complete.cases(unique_compartments), ]
       
       div(
         h4("Legend"),
-        h5("Compartments"),
         tags$ul(
-          lapply(1:nrow(compartment_legend), function(i) {
+          lapply(1:nrow(unique_compartments), function(i) {
             tags$li(
               style = "list-style-type: none; margin-bottom: 5px; display: flex; align-items: center;",
               div(
                 style = paste0(
-                  "width: 20px; height: 20px; border: 1px solid ", compartment_legend$color.border[i], 
-                  "; border-radius: 50%; margin-right: 10px; background-color: transparent;"
+                  "width: 20px; height: 20px; border: 1px solid ", unique_compartments$color.border[i], 
+                  "; background-color: transparent; border-radius: 50%; margin-right: 10px;"  # Bordures arrondies pour un rond
                 )
               ),
-              span(
-                style = "color: black; font-size: 15px;",
-                paste0(compartment_legend$compartment[i])
-              )
+              span(unique_compartments$compartment[i], style = "color: black; font-size: 14px;")
             )
           })
         )
       )
     } else {
-      NULL  # Rien n'est affiché si le graphe n'est pas généré
+      div(h4("No legend to display"))
     }
   })
   
@@ -239,15 +263,26 @@ server <- function(input, output, session) {
   output$network <- renderVisNetwork({
     req(graph_data$nodes, graph_data$edges)
     
-    # Sélection du layout en fonction de l'entrée utilisateur
+    # Recalculer les tailles avant de rendre le graphe
+    graph_data$nodes <- calculate_node_size(graph_data$nodes)
+    
+    # Récupérer le choix du layout
     layout_choice <- input$layout_choice
     
     vis_net <- visNetwork(graph_data$nodes, graph_data$edges) %>%
       visOptions(highlightNearest = TRUE, nodesIdSelection = TRUE) %>%
       visEdges(arrows = "to") %>%
-      visInteraction(zoomView = TRUE, dragView = TRUE, multiselect = TRUE)
+      visInteraction(zoomView = TRUE, dragView = TRUE, multiselect = TRUE) %>%
+      visNodes(
+        font = list(size = 20, vadjust = -30), # Positionner les étiquettes en dehors des nœuds
+        labelHighlightBold = FALSE, # Désactiver la mise en gras au survol
+        scaling = list(label = list(enabled = FALSE)) # Désactiver l'ajustement automatique
+      ) %>%
+      visEvents(select = "function(nodes) { 
+      Shiny.onInputChange('network_selected', nodes.nodes);
+    }")
     
-    # Ajouter le layout choisi
+    # Ajouter le layout en fonction du choix
     if (layout_choice == "forceAtlas2Based") {
       vis_net <- vis_net %>%
         visPhysics(
@@ -290,10 +325,6 @@ server <- function(input, output, session) {
       vis_net <- vis_net %>%
         visIgraphLayout(layout = "layout_in_circle")
     }
-    
-    # Ajouter l'option pour ajuster la position du texte des labels
-    vis_net <- vis_net %>%
-      visNodes(font = list(vadjust = -20))  # Ajuster la position du texte des labels des nœuds
     
     vis_net
   })

@@ -47,9 +47,8 @@ ui <- dashboardPage(
                     ),
                     tags$hr(),
                     
-                    # Légende conditionnelle
-                    uiOutput("sidebar_legend"),  # Conteneur pour la légende
-                    width = 3  # Ajuste la largeur de la sidebar
+                    uiOutput("sidebar_legend"),  # Conteneur pour afficher la légende
+                    width = 3  # Ajuster la largeur de la barre latérale
                   ),
                   
                   mainPanel(
