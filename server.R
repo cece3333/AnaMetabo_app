@@ -15,10 +15,13 @@ server <- function(input, output, session) {
   observeEvent(input$add_node, {
     showModal(modalDialog(
       title = "Ajouter un nœud",
+      textInput("node_id", "ID du nœud :", value = ""),
       textInput("node_label", "Nom du nœud :", value = ""),
-      selectInput("node_color", "Couleur du nœud :", 
-                  choices = c("Rouge", "Vert", "Bleu"), selected = "Rouge"),
-      numericInput("node_size", "Taille du nœud :", value = 10, min = 1, max = 100),
+      selectInput("node_compartment", "Compartiment :", 
+                  choices = c(names(compartment_colors), "reaction"), selected = "cytosol"),
+      selectInput("node_shape", "Forme du nœud :", 
+                  choices = c("circle", "diamond", "square"), 
+                  selected = "circle"),
       footer = tagList(
         modalButton("Annuler"),
         actionButton("confirm_add_node", "Valider")
@@ -28,30 +31,69 @@ server <- function(input, output, session) {
   
   # Gestion du clic sur le bouton "Valider" dans la modale
   observeEvent(input$confirm_add_node, {
-    req(input$node_label, input$node_color, input$node_size)
+    req(input$node_id, input$node_label, input$node_compartment, input$node_shape)
     
+    # Vérifier si l'ID existe déjà
+    if (input$node_id %in% graph_data$nodes$id) {
+      showNotification("L'ID du nœud existe déjà !", type = "error")
+      return()
+    }
+    
+    # Déterminer les propriétés du nœud en fonction du compartiment
+    if (input$node_compartment == "reaction") {
+      node_shape <- "square"        # Forme carrée pour les réactions
+      node_color_background <- "red"  # Couleur rouge pour les réactions
+      node_size <- 10               # Taille spécifique pour les réactions
+    } else {
+      node_shape <- input$node_shape
+      node_color_background <- "lightgrey"  # Couleur par défaut pour les autres nœuds
+      node_size <- if (input$node_shape == "square") 10 else 50  # Taille par défaut
+    }
+    
+    # Assigner la couleur de contour en fonction du compartiment
+    border_color <- if (input$node_compartment %in% names(compartment_colors)) {
+      compartment_colors[[input$node_compartment]]
+    } else {
+      "black"  # Couleur par défaut si le compartiment n'est pas trouvé
+    }
+    
+    # Créer le nouveau nœud
     new_node <- data.frame(
-      id = if (nrow(graph_data$nodes) == 0) 1 else max(as.numeric(graph_data$nodes$id)) + 1,
+      id = input$node_id,
       label = input$node_label,
-      color = input$node_color,
-      size = input$node_size,
-      compartments = input$compartment,
+      shape = node_shape,
+      color.border = border_color,  # Couleur de bordure définie
+      color.background = node_color_background,  # Couleur de fond
+      size = node_size,  # Taille en fonction de la forme et du compartiment
+      compartment = input$node_compartment,
       stringsAsFactors = FALSE
     )
     
-    if (!new_node$id %in% graph_data$nodes$id) {
-      graph_data$nodes <- rbind(graph_data$nodes, new_node)
-      
-      updateSelectInput(session, "edge_from", choices = setNames(graph_data$nodes$id, graph_data$nodes$label))
-      updateSelectInput(session, "edge_to", choices = setNames(graph_data$nodes$id, graph_data$nodes$label))
-      updateSelectInput(session, "delete_edge_from", choices = setNames(graph_data$nodes$id, graph_data$nodes$label))
-      updateSelectInput(session, "delete_edge_to", choices = setNames(graph_data$nodes$id, graph_data$nodes$label))
-      
-      showNotification("Node successfully added!", type = "message")
-      removeModal()
-    } else {
-      showNotification("Node ID already exists!", type = "error")
+    # Vérifier et aligner les colonnes
+    all_columns <- union(names(graph_data$nodes), names(new_node))  # Toutes les colonnes nécessaires
+    missing_cols_nodes <- setdiff(all_columns, names(graph_data$nodes))  # Colonnes manquantes dans graph_data$nodes
+    missing_cols_new_node <- setdiff(all_columns, names(new_node))  # Colonnes manquantes dans new_node
+    
+    # Ajouter les colonnes manquantes
+    for (col in missing_cols_nodes) {
+      graph_data$nodes[[col]] <- NA  # Ajouter les colonnes manquantes dans graph_data$nodes
     }
+    for (col in missing_cols_new_node) {
+      new_node[[col]] <- NA  # Ajouter les colonnes manquantes dans new_node
+    }
+    
+    # Ajouter le nœud au graphe
+    graph_data$nodes <- rbind(graph_data$nodes, new_node)
+    
+    # Mettre à jour les sélecteurs
+    updateSelectInput(session, "edge_from", choices = setNames(graph_data$nodes$id, graph_data$nodes$label))
+    updateSelectInput(session, "edge_to", choices = setNames(graph_data$nodes$id, graph_data$nodes$label))
+    updateSelectInput(session, "delete_edge_from", choices = setNames(graph_data$nodes$id, graph_data$nodes$label))
+    updateSelectInput(session, "delete_edge_to", choices = setNames(graph_data$nodes$id, graph_data$nodes$label))
+    
+    # Notification de succès
+    showNotification("Node successfully added!", type = "message")
+    removeModal()
   })
   
   # Gestion du clic sur le bouton "Add Edge"
@@ -144,19 +186,19 @@ server <- function(input, output, session) {
       
       div(
         h4("Legend"),
-        h5("Compartments:"),
+        h5("Compartments"),
         tags$ul(
           lapply(1:nrow(compartment_legend), function(i) {
             tags$li(
               style = "list-style-type: none; margin-bottom: 5px; display: flex; align-items: center;",
               div(
                 style = paste0(
-                  "width: 15px; height: 15px; border: 1px solid ", compartment_legend$color.border[i], 
+                  "width: 20px; height: 20px; border: 1px solid ", compartment_legend$color.border[i], 
                   "; border-radius: 50%; margin-right: 10px; background-color: transparent;"
                 )
               ),
               span(
-                style = "color: black; font-weight: bold; font-size: 14px;",
+                style = "color: black; font-size: 15px;",
                 paste0(compartment_legend$compartment[i])
               )
             )

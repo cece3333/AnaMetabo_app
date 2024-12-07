@@ -6,7 +6,6 @@ ui <- dashboardPage(
   
   dashboardHeader(title = "AnaMetabo™"),
   
-  
   dashboardSidebar(
     sidebarMenu(
       menuItem("Accueil", tabName = "home", icon = icon("home")),
@@ -18,8 +17,6 @@ ui <- dashboardPage(
     tabItems(
       # Onglet Accueil
       tabItem(tabName = "home",
-              h2("🚧 En cours de développement 🚧"),
-              p("Cette application est actuellement en construction. Certaines fonctionnalités peuvent ne pas fonctionner."),
               h2("Bienvenue dans l'application AnaMetabo"),
               p("Un outil pour visualiser et effectuer des analyses qualitatives des pathways du virus H5N1."),
               tags$footer(
