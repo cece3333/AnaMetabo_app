@@ -56,7 +56,7 @@ load_sbml_data <- function(sbml_file) {
     id = xml_attr(species_nodes, "id"),
     label = xml_attr(species_nodes, "name"),
     shape = "dot",  # Mettre les espèces sous forme de cercle
-    color.background = "#F0F0F0", # Couleur par défaut des espèces
+    color.background = "lightgrey", # Couleur par défaut des espèces
     size = 50,
     font.size = 20,
     stringsAsFactors = FALSE
