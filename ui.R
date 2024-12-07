@@ -47,9 +47,8 @@ ui <- dashboardPage(
                     ),
                     tags$hr(),
                     
-                    # Légende conditionnelle
-                    uiOutput("sidebar_legend"),  # Conteneur pour la légende
-                    width = 3  # Ajuste la largeur de la sidebar
+                    uiOutput("sidebar_legend"),  # Conteneur pour afficher la légende
+                    width = 3  # Ajuster la largeur de la barre latérale
                   ),
                   
                   mainPanel(
@@ -83,7 +82,7 @@ ui <- dashboardPage(
                   div(
                     actionButton("add_node", "Add Node", style = "margin-right: 10px;"),
                     actionButton("delete_node", "Delete Selected Node", style = "margin-right: 10px;"),
-                    actionButton("add_edge", "Add Edge", style = "margin-right: 10px;"),
+                    actionButton("add_edge_button", "Add Edge", style = "margin-right: 10px;"),
                     actionButton("delete_edge", "Delete Edge"),
                     style = "margin-top: 10px;"
                   )
